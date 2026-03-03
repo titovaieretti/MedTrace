@@ -9,10 +9,13 @@ import { EtiquetasScreen } from "@/components/medtrace/screens/etiquetas-screen"
 import { PedidosScreen } from "@/components/medtrace/screens/pedidos-screen";
 import { EscaneoScreen } from "@/components/medtrace/screens/escaneo-screen";
 import { MasScreen } from "@/components/medtrace/screens/mas-screen";
+import { LoginScreen } from "@/components/medtrace/screens/login-screen";
+import { useAuthUser, logout } from "@/lib/store";
 
 export default function MedTracePage() {
   const [activeTab, setActiveTab] = useState<TabId>("inicio");
   const [actionFlag, setActionFlag] = useState<string | null>(null);
+  const { user, isLoading } = useAuthUser();
 
   function handleAction(action: string) {
     if (action === "crear-lote") {
@@ -32,6 +35,21 @@ export default function MedTracePage() {
   return (
     <SWRConfig value={{ revalidateOnFocus: false }}>
       <div className="min-h-screen bg-background">
+        {isLoading && (
+          <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+            Cargando...
+          </div>
+        )}
+        {!isLoading && !user && (
+          <LoginScreen
+            onLoginSuccess={() => {
+              setActiveTab("inicio");
+              setActionFlag(null);
+            }}
+          />
+        )}
+        {!isLoading && user && (
+          <>
         {activeTab === "inicio" && (
           <InicioScreen onNavigate={handleTabChange} onAction={handleAction} />
         )}
@@ -49,8 +67,18 @@ export default function MedTracePage() {
           />
         )}
         {activeTab === "escaneo" && <EscaneoScreen />}
-        {activeTab === "mas" && <MasScreen />}
+        {activeTab === "mas" && (
+          <MasScreen
+            onLogout={async () => {
+              await logout();
+              setActiveTab("inicio");
+              setActionFlag(null);
+            }}
+          />
+        )}
         <BottomTabs activeTab={activeTab} onTabChange={handleTabChange} />
+          </>
+        )}
       </div>
     </SWRConfig>
   );

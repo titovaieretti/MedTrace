@@ -45,14 +45,22 @@ import {
   toggleOfflineMode,
   syncOfflineQueue,
   addUbicacion,
+  useAuthUser,
 } from "@/lib/store";
 import { TrazabilidadScreen } from "./trazabilidad-screen";
 import type { Ubicacion } from "@/lib/types";
 
 type SubView = "menu" | "reportes" | "ubicaciones" | "roles" | "perfil" | "trazabilidad";
 
-export function MasScreen() {
+export function MasScreen({ onLogout }: { onLogout?: () => Promise<void> | void }) {
   const [subView, setSubView] = useState<SubView>("menu");
+  const { user } = useAuthUser();
+  const initials = (user?.name ?? "Usuario")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
   const ubicaciones = useUbicaciones();
   const lotes = useLotes();
   const offline = useOfflineMode();
@@ -298,12 +306,12 @@ export function MasScreen() {
         <div className="px-4 py-4 flex flex-col gap-4 max-w-lg mx-auto w-full">
           <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg font-bold">
-              FL
+              {initials || "U"}
             </div>
             <div>
-              <p className="text-base font-semibold text-card-foreground">Farm. Lopez</p>
-              <p className="text-sm text-muted-foreground">Farmaceutico</p>
-              <p className="text-xs text-muted-foreground">lopez@hospital.com.ar</p>
+              <p className="text-base font-semibold text-card-foreground">{user?.name ?? "Usuario"}</p>
+              <p className="text-sm text-muted-foreground">{user?.role ?? "Farmaceutico"}</p>
+              <p className="text-xs text-muted-foreground">{user?.email ?? "lopez@hospital.com.ar"}</p>
             </div>
           </div>
 
@@ -360,7 +368,18 @@ export function MasScreen() {
 
           <Button
             variant="outline"
-            onClick={() => toast.info("Funcion de cierre de sesion pendiente")}
+            onClick={async () => {
+              try {
+                await onLogout?.();
+                toast.success("Sesion cerrada");
+              } catch (error) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "No se pudo cerrar sesion"
+                );
+              }
+            }}
             className="bg-transparent text-destructive border-destructive/30 hover:bg-destructive/10"
           >
             <LogOut className="h-4 w-4 mr-2" />

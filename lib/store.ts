@@ -14,10 +14,10 @@ import type {
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
-const API_EMAIL = process.env.NEXT_PUBLIC_API_EMAIL ?? "lopez@hospital.com.ar";
-const API_PASSWORD = process.env.NEXT_PUBLIC_API_PASSWORD ?? "admin123";
 
 let _accessToken: string | null = null;
+let _refreshToken: string | null = null;
+let _authUser: AuthUser | null = null;
 let _medicamentos: Medicamento[] = [];
 let _lotes: LoteEtiquetas[] = [];
 let _pedidos: Pedido[] = [];
@@ -35,40 +35,78 @@ let _offlineQueuePayload: {
   fechaHora: string;
 }[] = [];
 
-function getStoredToken(): string | null {
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
+function getStoredAccessToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("medtrace_access_token");
 }
 
-function setStoredToken(token: string | null) {
+function getStoredRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("medtrace_refresh_token");
+}
+
+function setStoredTokens(accessToken: string | null, refreshToken: string | null) {
   if (typeof window === "undefined") return;
-  if (!token) {
+  if (!accessToken) {
     localStorage.removeItem("medtrace_access_token");
-    return;
+  } else {
+    localStorage.setItem("medtrace_access_token", accessToken);
   }
-  localStorage.setItem("medtrace_access_token", token);
+  if (!refreshToken) {
+    localStorage.removeItem("medtrace_refresh_token");
+  } else {
+    localStorage.setItem("medtrace_refresh_token", refreshToken);
+  }
 }
 
 async function ensureToken(): Promise<string> {
   if (!_accessToken) {
-    _accessToken = getStoredToken();
+    _accessToken = getStoredAccessToken();
+  }
+  if (!_refreshToken) {
+    _refreshToken = getStoredRefreshToken();
   }
   if (_accessToken) return _accessToken;
+  if (_refreshToken) {
+    return refreshAccessToken();
+  }
+  throw new Error("No autenticado");
+}
 
-  const response = await fetch(`${API_BASE}/auth/login`, {
+async function refreshAccessToken(): Promise<string> {
+  if (!_refreshToken) {
+    _refreshToken = getStoredRefreshToken();
+  }
+  if (!_refreshToken) throw new Error("No autenticado");
+
+  const response = await fetch(`${API_BASE}/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: API_EMAIL, password: API_PASSWORD }),
+    body: JSON.stringify({ refresh_token: _refreshToken }),
   });
-
   if (!response.ok) {
-    throw new Error("No se pudo autenticar con el backend");
+    throw new Error("Sesion expirada");
   }
-
   const data = await response.json();
   _accessToken = data.access_token;
-  setStoredToken(_accessToken);
+  _refreshToken = data.refresh_token ?? _refreshToken;
+  setStoredTokens(_accessToken, _refreshToken);
   return _accessToken!;
+}
+
+function clearSession() {
+  _accessToken = null;
+  _refreshToken = null;
+  _authUser = null;
+  setStoredTokens(null, null);
+  mutate("authUser", null, false);
 }
 
 async function api<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
@@ -83,11 +121,14 @@ async function api<T>(path: string, init: RequestInit = {}, auth = true): Promis
   let response = await fetch(`${API_BASE}${path}`, { ...init, headers });
 
   if (auth && response.status === 401) {
-    _accessToken = null;
-    setStoredToken(null);
-    const token = await ensureToken();
-    headers.set("Authorization", `Bearer ${token}`);
-    response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    try {
+      const token = await refreshAccessToken();
+      headers.set("Authorization", `Bearer ${token}`);
+      response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    } catch {
+      clearSession();
+      throw new Error("No autenticado");
+    }
   }
 
   if (!response.ok) {
@@ -217,6 +258,21 @@ async function fetchMedicamentos(): Promise<Medicamento[]> {
   return _medicamentos;
 }
 
+async function fetchAuthUser(): Promise<AuthUser | null> {
+  if (!_accessToken) {
+    _accessToken = getStoredAccessToken();
+  }
+  if (!_accessToken) return null;
+  const me = await api<any>("/auth/me");
+  _authUser = {
+    id: me.id,
+    name: me.name,
+    email: me.email,
+    role: me.role,
+  };
+  return _authUser;
+}
+
 async function fetchLotes(): Promise<LoteEtiquetas[]> {
   const data = await api<any[]>("/label-batches");
   _lotes = data.map(mapLote);
@@ -253,6 +309,13 @@ export function useMedicamentos() {
     fallbackData: _medicamentos,
   });
   return data ?? [];
+}
+
+export function useAuthUser() {
+  const { data, isLoading, error } = useSWR<AuthUser | null>("authUser", fetchAuthUser, {
+    revalidateOnFocus: false,
+  });
+  return { user: data ?? null, isLoading, error };
 }
 
 export function useLotes() {
@@ -324,6 +387,47 @@ export function getMedicamento(id: string): Medicamento | undefined {
 
 export function getPaciente(id: string): Paciente | undefined {
   return _pacientes.find((p) => p.id === id);
+}
+
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const response = await api<any>(
+    "/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    },
+    false
+  );
+
+  _accessToken = response.access_token;
+  _refreshToken = response.refresh_token;
+  setStoredTokens(_accessToken, _refreshToken);
+  _authUser = {
+    id: response.user.id,
+    name: response.user.name,
+    email: response.user.email,
+    role: response.user.role,
+  };
+  await mutate("authUser", _authUser, false);
+  return _authUser;
+}
+
+export async function logout() {
+  clearSession();
+  _medicamentos = [];
+  _lotes = [];
+  _pedidos = [];
+  _alertas = [];
+  _pacientes = [];
+  _ubicaciones = [];
+  await Promise.all([
+    mutate("medicamentos", [], false),
+    mutate("lotes", [], false),
+    mutate("pedidos", [], false),
+    mutate("alertas", [], false),
+    mutate("pacientes", [], false),
+    mutate("ubicaciones", [], false),
+  ]);
 }
 
 // Mutations
