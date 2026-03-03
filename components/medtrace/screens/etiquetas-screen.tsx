@@ -64,7 +64,7 @@ export function EtiquetasScreen({ autoCreate }: { autoCreate?: boolean }) {
     setView("lista");
   }
 
-  function handleNextStep() {
+  async function handleNextStep() {
     if (paso === 0) {
       if (!medId) {
         toast.error("Selecciona un medicamento");
@@ -83,19 +83,36 @@ export function EtiquetasScreen({ autoCreate }: { autoCreate?: boolean }) {
         return;
       }
       // Create the lote
-      const newLote = createLote(medId, loteNombre, vencimiento, Number(cantidad));
-      setCreatedLote(newLote);
-      setPaso(1);
+      try {
+        const newLote = await createLote(
+          medId,
+          loteNombre,
+          vencimiento,
+          Number(cantidad)
+        );
+        setCreatedLote(newLote);
+        setPaso(1);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "No se pudo crear el lote"
+        );
+      }
     } else if (paso === 1) {
       setPaso(2);
     }
   }
 
-  function handleMarcarImpreso() {
+  async function handleMarcarImpreso() {
     if (createdLote) {
-      markLoteImpreso(createdLote.id);
-      toast.success("Lote marcado como impreso");
-      handleBack();
+      try {
+        await markLoteImpreso(createdLote.id);
+        toast.success("Lote marcado como impreso");
+        handleBack();
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "No se pudo marcar impreso"
+        );
+      }
     }
   }
 
@@ -154,11 +171,19 @@ export function EtiquetasScreen({ autoCreate }: { autoCreate?: boolean }) {
             </div>
             {detalleLote.estado === "borrador" && (
               <Button
-                onClick={() => {
-                  markLoteImpreso(detalleLote.id);
-                  toast.success("Lote marcado como impreso");
-                  setDetalleLote(null);
-                  setView("lista");
+                onClick={async () => {
+                  try {
+                    await markLoteImpreso(detalleLote.id);
+                    toast.success("Lote marcado como impreso");
+                    setDetalleLote(null);
+                    setView("lista");
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "No se pudo marcar impreso"
+                    );
+                  }
                 }}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >

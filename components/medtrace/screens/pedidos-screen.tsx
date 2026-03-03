@@ -79,7 +79,7 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
     );
   }
 
-  function handleGuardarBorrador() {
+  async function handleGuardarBorrador() {
     if (!pacienteId) {
       toast.error("Selecciona un paciente");
       return;
@@ -88,25 +88,29 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
       toast.error("Selecciona un medicamento para cada item");
       return;
     }
-    const newPedido = createPedido({
-      pacienteId,
-      fecha: new Date().toISOString().split("T")[0],
-      estado: "borrador",
-      items: items.map((it, i) => ({
-        id: `item-new-${Date.now()}-${i}`,
-        medicamentoId: it.medicamentoId,
-        dosis: it.dosis,
-        ventanaHoraria: it.ventana,
-        notas: it.notas,
-      })),
-    });
-    toast.success("Pedido guardado como borrador");
-    setDetallePedido(newPedido);
-    setView("detalle");
-    resetForm();
+    try {
+      const newPedido = await createPedido({
+        pacienteId,
+        fecha: new Date().toISOString().split("T")[0],
+        estado: "borrador",
+        items: items.map((it, i) => ({
+          id: `item-new-${Date.now()}-${i}`,
+          medicamentoId: it.medicamentoId,
+          dosis: it.dosis,
+          ventanaHoraria: it.ventana,
+          notas: it.notas,
+        })),
+      });
+      toast.success("Pedido guardado como borrador");
+      setDetallePedido(newPedido);
+      setView("detalle");
+      resetForm();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo crear");
+    }
   }
 
-  function handleEnviarPreparacion() {
+  async function handleEnviarPreparacion() {
     if (!pacienteId) {
       toast.error("Selecciona un paciente");
       return;
@@ -115,26 +119,30 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
       toast.error("Selecciona un medicamento para cada item");
       return;
     }
-    const newPedido = createPedido({
-      pacienteId,
-      fecha: new Date().toISOString().split("T")[0],
-      estado: "en_preparacion",
-      items: items.map((it, i) => ({
-        id: `item-new-${Date.now()}-${i}`,
-        medicamentoId: it.medicamentoId,
-        dosis: it.dosis,
-        ventanaHoraria: it.ventana,
-        notas: it.notas,
-      })),
-    });
-    toast.success("Pedido enviado a preparacion");
-    setDetallePedido(newPedido);
-    setView("detalle");
-    resetForm();
+    try {
+      const newPedido = await createPedido({
+        pacienteId,
+        fecha: new Date().toISOString().split("T")[0],
+        estado: "en_preparacion",
+        items: items.map((it, i) => ({
+          id: `item-new-${Date.now()}-${i}`,
+          medicamentoId: it.medicamentoId,
+          dosis: it.dosis,
+          ventanaHoraria: it.ventana,
+          notas: it.notas,
+        })),
+      });
+      toast.success("Pedido enviado a preparacion");
+      setDetallePedido(newPedido);
+      setView("detalle");
+      resetForm();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo crear");
+    }
   }
 
-  function handleScan(pedidoId: string, unidadId: string) {
-    const result = escanearUnidadPedido(pedidoId, unidadId);
+  async function handleScan(pedidoId: string, unidadId: string) {
+    const result = await escanearUnidadPedido(pedidoId, unidadId);
     if (result.ok) {
       toast.success(`Unidad ${unidadId} escaneada correctamente`);
       // Refresh detail
@@ -301,9 +309,17 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
-                      onClick={() => {
-                        updatePedidoEstado(freshPedido.id, "entregado");
-                        toast.success("Pedido marcado como entregado");
+                      onClick={async () => {
+                        try {
+                          await updatePedidoEstado(freshPedido.id, "entregado");
+                          toast.success("Pedido marcado como entregado");
+                        } catch (error) {
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : "No se pudo actualizar el pedido"
+                          );
+                        }
                       }}
                       className="flex-1 bg-transparent text-foreground border-border"
                     >
@@ -311,9 +327,17 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
                       Entregado
                     </Button>
                     <Button
-                      onClick={() => {
-                        updatePedidoEstado(freshPedido.id, "entregado");
-                        toast.success("Preparacion completada");
+                      onClick={async () => {
+                        try {
+                          await updatePedidoEstado(freshPedido.id, "entregado");
+                          toast.success("Preparacion completada");
+                        } catch (error) {
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : "No se pudo actualizar el pedido"
+                          );
+                        }
                       }}
                       className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
                     >
@@ -324,9 +348,17 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
                 )}
                 {freshPedido.estado === "borrador" && (
                   <Button
-                    onClick={() => {
-                      updatePedidoEstado(freshPedido.id, "en_preparacion");
-                      toast.success("Pedido enviado a preparacion");
+                    onClick={async () => {
+                      try {
+                        await updatePedidoEstado(freshPedido.id, "en_preparacion");
+                        toast.success("Pedido enviado a preparacion");
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "No se pudo actualizar el pedido"
+                        );
+                      }
                     }}
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
                   >

@@ -48,7 +48,7 @@ export function EscaneoScreen() {
   const [notas, setNotas] = useState("");
   const [log, setLog] = useState<LogEntry[]>([]);
 
-  function handleScan(unidadId: string) {
+  async function handleScan(unidadId: string) {
     if (!tipoEvento) {
       toast.error("Selecciona un tipo de evento");
       return;
@@ -58,7 +58,12 @@ export function EscaneoScreen() {
       return;
     }
 
-    const result = registrarEventoCustodia(unidadId, tipoEvento, ubicacionId, notas);
+    const result = await registrarEventoCustodia(
+      unidadId,
+      tipoEvento,
+      ubicacionId,
+      notas
+    );
 
     const entry: LogEntry = {
       id: `log-${Date.now()}`,

@@ -108,41 +108,48 @@ export function MedicamentosScreen() {
     return Object.keys(newErrors).length === 0;
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!validate()) return;
 
-    // TODO: llamar a API correspondiente
-    if (editingId) {
-      updateMedicamento(editingId, {
-        nombre: formData.nombre,
-        concentracion: formData.concentracion,
-        forma: formData.forma,
-        codigoInterno: formData.codigoInterno,
-        gtin: formData.gtin || undefined,
-      });
-      toast.success("Medicamento actualizado correctamente");
-    } else {
-      addMedicamento({
-        nombre: formData.nombre,
-        concentracion: formData.concentracion,
-        forma: formData.forma,
-        codigoInterno: formData.codigoInterno,
-        gtin: formData.gtin || undefined,
-        estado: "activo",
-      });
-      toast.success("Medicamento agregado correctamente");
+    try {
+      if (editingId) {
+        await updateMedicamento(editingId, {
+          nombre: formData.nombre,
+          concentracion: formData.concentracion,
+          forma: formData.forma,
+          codigoInterno: formData.codigoInterno,
+          gtin: formData.gtin || undefined,
+        });
+        toast.success("Medicamento actualizado correctamente");
+      } else {
+        await addMedicamento({
+          nombre: formData.nombre,
+          concentracion: formData.concentracion,
+          forma: formData.forma,
+          codigoInterno: formData.codigoInterno,
+          gtin: formData.gtin || undefined,
+          estado: "activo",
+        });
+        toast.success("Medicamento agregado correctamente");
+      }
+      setDialogOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar");
     }
-    setDialogOpen(false);
   }
 
-  function handleToggle(id: string) {
-    toggleMedicamentoEstado(id);
-    const med = getMedicamento(id);
-    toast.success(
-      med?.estado === "activo"
-        ? "Medicamento activado"
-        : "Medicamento desactivado"
-    );
+  async function handleToggle(id: string) {
+    try {
+      const med = getMedicamento(id);
+      await toggleMedicamentoEstado(id);
+      toast.success(
+        med?.estado === "activo"
+          ? "Medicamento desactivado"
+          : "Medicamento activado"
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo actualizar");
+    }
   }
 
   const detalleMed = detalleId

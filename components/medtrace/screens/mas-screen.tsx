@@ -44,6 +44,7 @@ import {
   useOfflineQueue,
   toggleOfflineMode,
   syncOfflineQueue,
+  addUbicacion,
 } from "@/lib/store";
 import { TrazabilidadScreen } from "./trazabilidad-screen";
 import type { Ubicacion } from "@/lib/types";
@@ -224,11 +225,19 @@ export function MasScreen() {
                 Cancelar
               </Button>
               <Button
-                onClick={() => {
-                  // TODO: llamar a API POST /api/ubicaciones
-                  toast.success("Ubicacion agregada (mock)");
-                  setAddUbiDialog(false);
-                  setNewUbiNombre("");
+                onClick={async () => {
+                  try {
+                    await addUbicacion(newUbiNombre, newUbiTipo);
+                    toast.success("Ubicacion agregada");
+                    setAddUbiDialog(false);
+                    setNewUbiNombre("");
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "No se pudo agregar ubicacion"
+                    );
+                  }
                 }}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
@@ -329,9 +338,17 @@ export function MasScreen() {
                 <p className="text-sm text-warning">{queue.length} eventos pendientes</p>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    syncOfflineQueue();
-                    toast.success("Cola sincronizada");
+                  onClick={async () => {
+                    try {
+                      await syncOfflineQueue();
+                      toast.success("Cola sincronizada");
+                    } catch (error) {
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "No se pudo sincronizar"
+                      );
+                    }
                   }}
                   className="bg-primary text-primary-foreground hover:bg-primary/90"
                 >

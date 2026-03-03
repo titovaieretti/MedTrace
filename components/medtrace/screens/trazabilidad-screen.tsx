@@ -14,8 +14,8 @@ export function TrazabilidadScreen() {
   const [unidad, setUnidad] = useState<UnidadEtiqueta | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  function handleSearch(idUnitario: string) {
-    const found = findUnidad(idUnitario);
+  async function handleSearch(idUnitario: string) {
+    const found = await findUnidad(idUnitario);
     if (found) {
       setUnidad(found);
       setNotFound(false);
