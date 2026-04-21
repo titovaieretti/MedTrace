@@ -1,5 +1,5 @@
 from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
@@ -11,3 +11,10 @@ class Patient(Base, UUIDMixin, TimestampMixin):
     mrn: Mapped[str] = mapped_column(String(60), nullable=False, unique=True, index=True)
     sala: Mapped[str] = mapped_column(String(80), nullable=False)
     cama: Mapped[str] = mapped_column(String(40), nullable=False)
+
+    historia_clinica = relationship(
+        "ClinicalRecord",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )

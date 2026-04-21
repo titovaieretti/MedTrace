@@ -11,6 +11,9 @@ import type {
   TipoEventoCustodia,
   Paciente,
   Ubicacion,
+  HistoriaClinica,
+  HistoriaClinicaCentralizada,
+  FuenteHistoriaClinica,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
@@ -231,6 +234,40 @@ function mapPaciente(raw: any): Paciente {
     mrn: raw.mrn,
     sala: raw.sala,
     cama: raw.cama,
+    historiaClinica: raw.historia_clinica ? mapHistoriaClinica(raw.historia_clinica) : undefined,
+  };
+}
+
+function mapHistoriaClinica(raw: any): HistoriaClinica {
+  return {
+    id: raw.id,
+    patientId: raw.patient_id,
+    source: raw.source,
+    sourceLabel: raw.source_label,
+    sourceReference: raw.source_reference ?? undefined,
+    importedAt: raw.imported_at ?? undefined,
+    motivoIngreso: raw.motivo_ingreso ?? "",
+    diagnosticoPrincipal: raw.diagnostico_principal ?? "",
+    alergias: raw.alergias ?? "",
+    medicacionCronica: raw.medicacion_cronica ?? "",
+    antecedentes: raw.antecedentes ?? "",
+    notas: raw.notas ?? "",
+  };
+}
+
+function mapHistoriaClinicaCentralizada(raw: any): HistoriaClinicaCentralizada {
+  return {
+    mrn: raw.mrn,
+    source: raw.source,
+    sourceLabel: raw.source_label,
+    sourceReference: raw.source_reference,
+    importedAt: raw.imported_at,
+    motivoIngreso: raw.motivo_ingreso ?? "",
+    diagnosticoPrincipal: raw.diagnostico_principal ?? "",
+    alergias: raw.alergias ?? "",
+    medicacionCronica: raw.medicacion_cronica ?? "",
+    antecedentes: raw.antecedentes ?? "",
+    notas: raw.notas ?? "",
   };
 }
 
@@ -634,6 +671,60 @@ export async function addUbicacion(nombre: string, tipo: Ubicacion["tipo"]) {
     body: JSON.stringify({ nombre, tipo }),
   });
   await mutate("ubicaciones");
+}
+
+export async function lookupHistoriaClinicaCentralizada(
+  mrn: string
+): Promise<HistoriaClinicaCentralizada> {
+  const data = await api<any>(`/patients/centralized-history/lookup?mrn=${encodeURIComponent(mrn)}`);
+  return mapHistoriaClinicaCentralizada(data);
+}
+
+export async function createPaciente(payload: {
+  nombre: string;
+  mrn: string;
+  sala: string;
+  cama: string;
+  historiaClinica?: {
+    source: FuenteHistoriaClinica;
+    sourceLabel?: string;
+    sourceReference?: string;
+    motivoIngreso: string;
+    diagnosticoPrincipal: string;
+    alergias: string;
+    medicacionCronica: string;
+    antecedentes: string;
+    notas: string;
+  };
+}): Promise<Paciente> {
+  const created = await api<any>("/patients", {
+    method: "POST",
+    body: JSON.stringify({
+      nombre: payload.nombre,
+      mrn: payload.mrn,
+      sala: payload.sala,
+      cama: payload.cama,
+      historia_clinica: payload.historiaClinica
+        ? {
+            source: payload.historiaClinica.source,
+            source_label: payload.historiaClinica.sourceLabel ?? null,
+            source_reference: payload.historiaClinica.sourceReference ?? null,
+            motivo_ingreso: payload.historiaClinica.motivoIngreso,
+            diagnostico_principal: payload.historiaClinica.diagnosticoPrincipal,
+            alergias: payload.historiaClinica.alergias,
+            medicacion_cronica: payload.historiaClinica.medicacionCronica,
+            antecedentes: payload.historiaClinica.antecedentes,
+            notas: payload.historiaClinica.notas,
+          }
+        : null,
+      }),
+  });
+  const mapped = mapPaciente(created);
+  _pacientes = [..._pacientes.filter((patient) => patient.id !== mapped.id), mapped].sort((a, b) =>
+    a.nombre.localeCompare(b.nombre)
+  );
+  await mutate("pacientes", _pacientes, false);
+  return mapped;
 }
 
 // KPI helpers

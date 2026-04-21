@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CheckCircle2,
   Truck,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "../app-header";
@@ -16,6 +17,7 @@ import { EmptyState } from "../empty-state";
 import { ScanInput } from "../scan-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -23,18 +25,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   usePedidos,
   usePacientes,
   useMedicamentos,
   createPedido,
+  createPaciente,
   updatePedidoEstado,
   escanearUnidadPedido,
   getMedicamento,
   getPaciente,
+  lookupHistoriaClinicaCentralizada,
 } from "@/lib/store";
-import type { Pedido, ItemPedido } from "@/lib/types";
+import type {
+  HistoriaClinica,
+  HistoriaClinicaCentralizada,
+  Pedido,
+} from "@/lib/types";
 
 type ViewMode = "lista" | "crear" | "detalle";
 
@@ -46,13 +55,43 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
   const [detallePedido, setDetallePedido] = useState<Pedido | null>(null);
 
   // Create form
+  const [patientMode, setPatientMode] = useState<"existente" | "nuevo">("existente");
   const [pacienteId, setPacienteId] = useState("");
+  const [newPatient, setNewPatient] = useState({
+    nombre: "",
+    mrn: "",
+    sala: "",
+    cama: "",
+  });
+  const [historyMode, setHistoryMode] = useState<"local" | "centralizada">("local");
+  const [historyForm, setHistoryForm] = useState({
+    motivoIngreso: "",
+    diagnosticoPrincipal: "",
+    alergias: "",
+    medicacionCronica: "",
+    antecedentes: "",
+    notas: "",
+  });
+  const [centralizedPreview, setCentralizedPreview] = useState<HistoriaClinicaCentralizada | null>(null);
+  const [loadingCentralizedHistory, setLoadingCentralizedHistory] = useState(false);
   const [items, setItems] = useState<
     { medicamentoId: string; dosis: string; ventana: string; notas: string }[]
   >([{ medicamentoId: "", dosis: "", ventana: "08:00 - 20:00", notas: "" }]);
 
   function resetForm() {
+    setPatientMode("existente");
     setPacienteId("");
+    setNewPatient({ nombre: "", mrn: "", sala: "", cama: "" });
+    setHistoryMode("local");
+    setHistoryForm({
+      motivoIngreso: "",
+      diagnosticoPrincipal: "",
+      alergias: "",
+      medicacionCronica: "",
+      antecedentes: "",
+      notas: "",
+    });
+    setCentralizedPreview(null);
     setItems([{ medicamentoId: "", dosis: "", ventana: "08:00 - 20:00", notas: "" }]);
   }
 
@@ -79,18 +118,120 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
     );
   }
 
-  async function handleGuardarBorrador() {
-    if (!pacienteId) {
-      toast.error("Selecciona un paciente");
+  function updateNewPatient(field: keyof typeof newPatient, value: string) {
+    setNewPatient((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === "mrn" && historyMode === "centralizada") {
+        setCentralizedPreview(null);
+      }
+      return next;
+    });
+  }
+
+  function updateHistoryField(field: keyof typeof historyForm, value: string) {
+    setHistoryForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function applyHistory(history: Pick<
+    HistoriaClinica,
+    | "motivoIngreso"
+    | "diagnosticoPrincipal"
+    | "alergias"
+    | "medicacionCronica"
+    | "antecedentes"
+    | "notas"
+  >) {
+    setHistoryForm({
+      motivoIngreso: history.motivoIngreso,
+      diagnosticoPrincipal: history.diagnosticoPrincipal,
+      alergias: history.alergias,
+      medicacionCronica: history.medicacionCronica,
+      antecedentes: history.antecedentes,
+      notas: history.notas,
+    });
+  }
+
+  async function handleImportCentralizedHistory() {
+    if (!newPatient.mrn.trim()) {
+      toast.error("Ingresa el MRN del paciente para importar la historia clinica");
       return;
     }
+
+    setLoadingCentralizedHistory(true);
+    try {
+      const history = await lookupHistoriaClinicaCentralizada(newPatient.mrn.trim());
+      setCentralizedPreview(history);
+      applyHistory(history);
+      toast.success("Historia clinica centralizada importada");
+    } catch (error) {
+      setCentralizedPreview(null);
+      toast.error(error instanceof Error ? error.message : "No se pudo importar la historia clinica");
+    } finally {
+      setLoadingCentralizedHistory(false);
+    }
+  }
+
+  async function resolvePacienteId(): Promise<string> {
+    if (patientMode === "existente") {
+      if (!pacienteId) {
+        throw new Error("Selecciona un paciente");
+      }
+      return pacienteId;
+    }
+
+    if (!newPatient.nombre.trim() || !newPatient.mrn.trim() || !newPatient.sala.trim() || !newPatient.cama.trim()) {
+      throw new Error("Completa los datos del nuevo paciente");
+    }
+
+    if (historyMode === "centralizada" && !centralizedPreview) {
+      throw new Error("Importa la historia clinica centralizada antes de continuar");
+    }
+
+    if (
+      historyMode === "local" &&
+      !historyForm.motivoIngreso.trim() &&
+      !historyForm.diagnosticoPrincipal.trim() &&
+      !historyForm.notas.trim()
+    ) {
+      throw new Error("Carga al menos el motivo de ingreso, el diagnostico o una nota clinica");
+    }
+
+    const createdPatient = await createPaciente({
+      nombre: newPatient.nombre.trim(),
+      mrn: newPatient.mrn.trim(),
+      sala: newPatient.sala.trim(),
+      cama: newPatient.cama.trim(),
+      historiaClinica: {
+        source: historyMode,
+        sourceLabel:
+          historyMode === "centralizada"
+            ? centralizedPreview?.sourceLabel
+            : "Generada en MedTrace",
+        sourceReference:
+          historyMode === "centralizada"
+            ? centralizedPreview?.sourceReference
+            : undefined,
+        motivoIngreso: historyForm.motivoIngreso,
+        diagnosticoPrincipal: historyForm.diagnosticoPrincipal,
+        alergias: historyForm.alergias,
+        medicacionCronica: historyForm.medicacionCronica,
+        antecedentes: historyForm.antecedentes,
+        notas: historyForm.notas,
+      },
+    });
+
+    return createdPatient.id;
+  }
+
+  async function handleGuardarBorrador() {
     if (items.some((it) => !it.medicamentoId)) {
       toast.error("Selecciona un medicamento para cada item");
       return;
     }
     try {
+      const resolvedPacienteId = await resolvePacienteId();
       const newPedido = await createPedido({
-        pacienteId,
+        pacienteId: resolvedPacienteId,
         fecha: new Date().toISOString().split("T")[0],
         estado: "borrador",
         items: items.map((it, i) => ({
@@ -111,17 +252,14 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
   }
 
   async function handleEnviarPreparacion() {
-    if (!pacienteId) {
-      toast.error("Selecciona un paciente");
-      return;
-    }
     if (items.some((it) => !it.medicamentoId)) {
       toast.error("Selecciona un medicamento para cada item");
       return;
     }
     try {
+      const resolvedPacienteId = await resolvePacienteId();
       const newPedido = await createPedido({
-        pacienteId,
+        pacienteId: resolvedPacienteId,
         fecha: new Date().toISOString().split("T")[0],
         estado: "en_preparacion",
         items: items.map((it, i) => ({
@@ -151,6 +289,65 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
     } else {
       toast.error(result.error ?? "Error al escanear");
     }
+  }
+
+  function renderHistoriaClinica(historiaClinica?: HistoriaClinica) {
+    if (!historiaClinica) {
+      return (
+        <div className="rounded-lg border border-dashed border-border bg-card p-3">
+          <p className="text-sm text-muted-foreground">
+            El paciente no tiene una historia clinica cargada en MedTrace.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="font-semibold text-card-foreground">Historia clinica</h3>
+          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+            {historiaClinica.source === "centralizada" ? "API centralizada" : "Generada en MedTrace"}
+          </span>
+        </div>
+        <div className="space-y-2 text-sm">
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Origen:</span>{" "}
+            {historiaClinica.sourceLabel}
+          </p>
+          {historiaClinica.sourceReference && (
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">Referencia:</span>{" "}
+              {historiaClinica.sourceReference}
+            </p>
+          )}
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Motivo de ingreso:</span>{" "}
+            {historiaClinica.motivoIngreso || "Sin datos"}
+          </p>
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Diagnostico principal:</span>{" "}
+            {historiaClinica.diagnosticoPrincipal || "Sin datos"}
+          </p>
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Alergias:</span>{" "}
+            {historiaClinica.alergias || "Sin datos"}
+          </p>
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Medicacion cronica:</span>{" "}
+            {historiaClinica.medicacionCronica || "Sin datos"}
+          </p>
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Antecedentes:</span>{" "}
+            {historiaClinica.antecedentes || "Sin datos"}
+          </p>
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Notas:</span>{" "}
+            {historiaClinica.notas || "Sin datos"}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   // DETAIL VIEW
@@ -193,6 +390,8 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
               </div>
             </div>
           </div>
+
+          {renderHistoriaClinica(paciente?.historiaClinica)}
 
           <Tabs defaultValue="items">
             <TabsList className="w-full">
@@ -406,6 +605,8 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
 
   // CREATE VIEW
   if (view === "crear") {
+    const selectedPatient = pacienteId ? getPaciente(pacienteId) : undefined;
+
     return (
       <div className="flex flex-col min-h-screen pb-20">
         <AppHeader titulo="Crear pedido 24h">
@@ -418,33 +619,165 @@ export function PedidosScreen({ autoCreate }: { autoCreate?: boolean }) {
           {/* Patient */}
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="font-semibold text-card-foreground mb-3">Datos del paciente</h3>
-            <Select value={pacienteId} onValueChange={setPacienteId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar paciente..." />
-              </SelectTrigger>
-              <SelectContent>
-                {pacientes.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.nombre} - {p.mrn}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {pacienteId && (() => {
-              const pac = getPaciente(pacienteId);
-              return pac ? (
-                <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Sala</p>
-                    <p className="font-medium text-foreground">{pac.sala}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Cama</p>
-                    <p className="font-medium text-foreground">{pac.cama}</p>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <Button
+                type="button"
+                variant={patientMode === "existente" ? "default" : "outline"}
+                onClick={() => setPatientMode("existente")}
+                className={patientMode === "existente" ? "" : "bg-transparent"}
+              >
+                Paciente existente
+              </Button>
+              <Button
+                type="button"
+                variant={patientMode === "nuevo" ? "default" : "outline"}
+                onClick={() => setPatientMode("nuevo")}
+                className={patientMode === "nuevo" ? "" : "bg-transparent"}
+              >
+                Nuevo paciente
+              </Button>
+            </div>
+
+            {patientMode === "existente" ? (
+              <div className="space-y-3">
+                <Select value={pacienteId} onValueChange={setPacienteId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar paciente..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pacientes.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.nombre} - {p.mrn}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedPatient ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Sala</p>
+                        <p className="font-medium text-foreground">{selectedPatient.sala}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Cama</p>
+                        <p className="font-medium text-foreground">{selectedPatient.cama}</p>
+                      </div>
+                    </div>
+                    {renderHistoriaClinica(selectedPatient.historiaClinica)}
+                  </>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3">
+                  <Input
+                    value={newPatient.nombre}
+                    onChange={(e) => updateNewPatient("nombre", e.target.value)}
+                    placeholder="Nombre y apellido"
+                  />
+                  <Input
+                    value={newPatient.mrn}
+                    onChange={(e) => updateNewPatient("mrn", e.target.value)}
+                    placeholder="MRN / Nro. historia clinica"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      value={newPatient.sala}
+                      onChange={(e) => updateNewPatient("sala", e.target.value)}
+                      placeholder="Sala"
+                    />
+                    <Input
+                      value={newPatient.cama}
+                      onChange={(e) => updateNewPatient("cama", e.target.value)}
+                      placeholder="Cama"
+                    />
                   </div>
                 </div>
-              ) : null;
-            })()}
+
+                <div className="rounded-lg border border-border p-3">
+                  <h4 className="font-medium text-foreground mb-3">Carga de historia clinica</h4>
+                  <RadioGroup
+                    value={historyMode}
+                    onValueChange={(value) => setHistoryMode(value as "local" | "centralizada")}
+                    className="gap-3"
+                  >
+                    <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer">
+                      <RadioGroupItem value="local" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Generar en MedTrace</p>
+                        <p className="text-xs text-muted-foreground">
+                          El equipo completa la historia clinica desde este sistema.
+                        </p>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer">
+                      <RadioGroupItem value="centralizada" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Importar por API</p>
+                        <p className="text-xs text-muted-foreground">
+                          Busca la historia clinica en el repositorio central usando el MRN.
+                        </p>
+                      </div>
+                    </label>
+                  </RadioGroup>
+
+                  {historyMode === "centralizada" && (
+                    <div className="mt-3 space-y-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleImportCentralizedHistory}
+                        disabled={loadingCentralizedHistory}
+                        className="w-full bg-transparent"
+                      >
+                        <Search className="h-4 w-4 mr-2" />
+                        {loadingCentralizedHistory ? "Consultando API centralizada..." : "Importar historia centralizada"}
+                      </Button>
+                      {centralizedPreview && (
+                        <div className="rounded-md bg-primary/5 p-3 text-xs text-muted-foreground">
+                          Importada desde {centralizedPreview.sourceLabel} con referencia{" "}
+                          {centralizedPreview.sourceReference}.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-4 grid grid-cols-1 gap-3">
+                    <Textarea
+                      value={historyForm.motivoIngreso}
+                      onChange={(e) => updateHistoryField("motivoIngreso", e.target.value)}
+                      placeholder="Motivo de ingreso"
+                    />
+                    <Textarea
+                      value={historyForm.diagnosticoPrincipal}
+                      onChange={(e) => updateHistoryField("diagnosticoPrincipal", e.target.value)}
+                      placeholder="Diagnostico principal"
+                    />
+                    <Textarea
+                      value={historyForm.alergias}
+                      onChange={(e) => updateHistoryField("alergias", e.target.value)}
+                      placeholder="Alergias"
+                    />
+                    <Textarea
+                      value={historyForm.medicacionCronica}
+                      onChange={(e) => updateHistoryField("medicacionCronica", e.target.value)}
+                      placeholder="Medicacion cronica"
+                    />
+                    <Textarea
+                      value={historyForm.antecedentes}
+                      onChange={(e) => updateHistoryField("antecedentes", e.target.value)}
+                      placeholder="Antecedentes"
+                    />
+                    <Textarea
+                      value={historyForm.notas}
+                      onChange={(e) => updateHistoryField("notas", e.target.value)}
+                      placeholder="Notas clinicas"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Items */}

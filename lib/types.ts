@@ -56,6 +56,38 @@ export interface Paciente {
   mrn: string;
   sala: string;
   cama: string;
+  historiaClinica?: HistoriaClinica;
+}
+
+export type FuenteHistoriaClinica = "local" | "centralizada";
+
+export interface HistoriaClinica {
+  id: string;
+  patientId: string;
+  source: FuenteHistoriaClinica;
+  sourceLabel: string;
+  sourceReference?: string;
+  importedAt?: string;
+  motivoIngreso: string;
+  diagnosticoPrincipal: string;
+  alergias: string;
+  medicacionCronica: string;
+  antecedentes: string;
+  notas: string;
+}
+
+export interface HistoriaClinicaCentralizada {
+  mrn: string;
+  source: "centralizada";
+  sourceLabel: string;
+  sourceReference: string;
+  importedAt: string;
+  motivoIngreso: string;
+  diagnosticoPrincipal: string;
+  alergias: string;
+  medicacionCronica: string;
+  antecedentes: string;
+  notas: string;
 }
 
 export interface ItemPedido {
